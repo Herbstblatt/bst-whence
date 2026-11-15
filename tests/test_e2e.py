@@ -202,6 +202,48 @@ class TestEndToEnd(unittest.TestCase):
         self.assertIn("error", result)
         self.assertIn("not cached", result["error"])
 
+    def test_junction_subproject_loads_without_fetch_callback_error(self):
+        # Regression test: projects with junctions whose sources are not
+        # cached require a fetch_subprojects callback on the loader's
+        # LoadContext. Without it, load_elements() raises
+        # TypeError: 'NoneType' object is not callable.
+        project_dir = os.path.join(self.tmp, "junction-project")
+        sub_dir = os.path.join(project_dir, "sub")
+        os.makedirs(os.path.join(project_dir, "elements"))
+        os.makedirs(os.path.join(project_dir, "files", "app"))
+        os.makedirs(os.path.join(sub_dir, "elements"))
+
+        with open(os.path.join(project_dir, "project.conf"), "w") as f:
+            f.write("name: main\nmin-version: 2.0\nelement-path: elements\n")
+        with open(os.path.join(project_dir, "elements", "sub.bst"), "w") as f:
+            f.write("kind: junction\nsources:\n- kind: local\n  path: sub\n")
+        with open(os.path.join(project_dir, "elements", "app.bst"), "w") as f:
+            f.write(
+                "kind: import\nsources:\n- kind: local\n  path: files/app\n"
+                "depends:\n- sub.bst:tool.bst\n"
+            )
+        with open(os.path.join(project_dir, "files", "app", "hello.txt"), "w") as f:
+            f.write("hello\n")
+        with open(os.path.join(sub_dir, "project.conf"), "w") as f:
+            f.write("name: sub\nmin-version: 2.0\nelement-path: elements\n")
+        with open(os.path.join(sub_dir, "elements", "tool.bst"), "w") as f:
+            f.write("kind: import\nsources:\n- kind: local\n  path: files/tool\n")
+        os.makedirs(os.path.join(sub_dir, "files", "tool"))
+        with open(os.path.join(sub_dir, "files", "tool", "tool.txt"), "w") as f:
+            f.write("tool\n")
+
+        project = core.load_project(self.context, project_dir)
+        result = core.analyze_target(
+            self.context, project, "app.bst", "all", None, None
+        )
+        # The elements must load (the junction gets fetched on demand); with
+        # the regression the error is "failed to load element: 'NoneType'
+        # object is not callable".
+        error = result.get("error", "")
+        self.assertNotIn("not callable", error)
+        # Artifacts are not cached, which is reported cleanly:
+        self.assertIn("not cached", error)
+
     def test_casd_failure_falls_back_to_filesystem(self):
         # Fabricate cached artifacts, then load fresh elements and simulate a
         # dead casd: Element._load_artifact() raises the exact error bst

@@ -11,6 +11,7 @@ try:
     from buildstream._project import Project
     from buildstream._artifact import Artifact
     from buildstream._message import MessageType, unconditional_messages
+    from buildstream._stream import Stream
     from buildstream.types import _Scope
     from buildstream._protos.build.bazel.remote.execution.v2 import remote_execution_pb2
 except ImportError as e:
@@ -24,6 +25,7 @@ __all__ = [
     "Context",
     "MessageType",
     "Project",
+    "Stream",
     "_Scope",
     "remote_execution_pb2",
     "unconditional_messages",

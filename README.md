@@ -53,6 +53,10 @@ local CAS; the only casd interaction is the ordinary artifact cache query that
 start, bst-whence falls back to resolving artifacts directly from the local
 filesystem (strict cache mode, which is BuildStream's default).
 
+Projects with junctions are loaded exactly as `bst` loads them: if a
+junction's sources are not in the source cache yet, they are fetched on
+demand (which may require network access).
+
 ## Installation
 
 Inside the environment that has BuildStream 2 installed:

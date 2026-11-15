@@ -27,16 +27,19 @@ Limitations:
   * Directories are structural and are not attributed.
 """
 
+import datetime
 import fnmatch
 import os
 import re
 import sys
+import traceback
 from collections import defaultdict
 
 from ._buildstream import (
     Artifact,
     MessageType,
     Project,
+    Stream,
     _Scope,
     remote_execution_pb2,
     unconditional_messages,
@@ -121,7 +124,30 @@ def load_project(context, directory):
     logger = get_logger()
     logger.status("Loading project from {}".format(directory))
     install_message_handler(context)
-    project = Project(directory, context)
+
+    # Create a Stream exactly like the bst frontend does. While loading
+    # elements, the loader needs a `fetch_subprojects` callback to fetch
+    # junction sources that are not cached yet; Stream provides it. The
+    # scheduler unconditionally invokes its ticker/interrupt callbacks, so
+    # provide no-ops (bst's frontend passes its UI callbacks here).
+    stream = Stream(
+        context,
+        datetime.datetime.now(),
+        ticker_callback=lambda: None,
+        interrupt_callback=lambda: None,
+    )
+    stream.init()
+    try:
+        project = Project(directory, context, fetch_subprojects=stream.fetch_subprojects)
+    except TypeError:
+        # Older BuildStream versions do not accept fetch_subprojects here
+        # and wire it up in Stream.set_project() instead.
+        project = Project(directory, context)
+    stream.set_project(project)
+    if project.load_context.fetch_subprojects is None:
+        project.load_context.set_fetch_subprojects(stream.fetch_subprojects)
+    context._bst_whence_stream = stream
+
     project.ensure_fully_loaded()
     logger.debug("Project loaded: {}".format(project.name))
     return project
@@ -201,11 +227,24 @@ def init_element_artifact(element, context):
 
 def release_cas_resources(context):
     """Stop background threads started by the CASCache (e.g. the casd usage
-    monitor), so the process can exit cleanly."""
+    monitor), so the process can exit cleanly. Also cleans up the Stream used
+    for project loading."""
     if context._cascache is not None:
         try:
             context._cascache.release_resources()
             get_logger().debug("Released CAS resources")
+        except Exception:
+            pass
+    stream = getattr(context, "_bst_whence_stream", None)
+    if stream is not None:
+        try:
+            stream.cleanup()
+        except Exception:
+            pass
+        try:
+            # Ensure no scheduler worker threads are left behind if a fetch
+            # failed partway through.
+            stream._scheduler.terminate()
         except Exception:
             pass
 
@@ -411,10 +450,13 @@ def analyze_target(context, project, target_name, scope_name, include, exclude):
         elements = project.load_elements([target_name])
         element = elements[0]
     except Exception as e:
+        logger.debug("Traceback for failed element load:", detail=traceback.format_exc())
         result["error"] = "failed to load element: {}".format(e)
         hint = _hint_for_load_error(e)
         if hint:
             result["error"] += "\n" + hint
+        else:
+            result["error"] += "\nhint: rerun with --debug to see the full traceback"
         return result
 
     result["element"] = element.name

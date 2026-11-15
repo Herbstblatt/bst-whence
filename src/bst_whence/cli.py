@@ -5,6 +5,7 @@ import argparse
 import io
 import os
 import sys
+import traceback
 
 from . import __version__
 from ._buildstream import Context
@@ -136,7 +137,16 @@ def main(argv=None):
                     context, project, target, args.deps, args.include, args.exclude
                 )
             except Exception as e:
-                result = {"target": target, "scope": args.deps, "error": str(e)}
+                logger.debug(
+                    "Unexpected error for target {}:".format(target),
+                    detail=traceback.format_exc(),
+                )
+                result = {
+                    "target": target,
+                    "scope": args.deps,
+                    "error": str(e)
+                    + "\nhint: rerun with --debug to see the full traceback",
+                }
             results.append(result)
 
         if args.format_ == "json":
