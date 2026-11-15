@@ -88,7 +88,36 @@ bst-whence [options] ELEMENT [ELEMENT...]
   --include GLOB         only report paths matching GLOB (repeatable)
   --exclude GLOB         skip paths matching GLOB (repeatable)
   --no-summary           omit the summary in text output
+  -v, --verbose          show informational and status messages on stderr
+  --debug                show debug messages on stderr (implies --verbose)
+  --log-file FILE        also write log output to FILE
 ```
+
+## Logging
+
+bst-whence logs to stderr in BuildStream's console style — elapsed and
+wallclock timestamps, level labels, indented detail lines:
+
+```
+[00:00:03][17:14:18] INFO    base.bst: 2 files indexed
+[00:00:03][17:14:18] STATUS  Reading artifact contents of app.bst
+[00:00:03][17:14:18] INFO    Attribution: 3 from deps, 1 moved, 0 ambiguous, 2 unattributed
+```
+
+BuildStream's own messages (element loading, warnings, …) are forwarded
+through its messenger and appear in the same format. Visibility follows the
+usual convention:
+
+* default: warnings and errors only
+* `-v, --verbose`: additionally informational and status messages
+* `--debug`: additionally debug messages and BuildStream's task delimiter
+  events
+* `--log-file FILE`: additionally write log output to FILE (informational
+  and above, or debug and above with `--debug`), regardless of the console
+  level
+
+The report itself always goes to stdout (or `-o FILE`), so it stays clean to
+pipe into other tools.
 
 ### Scope semantics (`--deps`)
 

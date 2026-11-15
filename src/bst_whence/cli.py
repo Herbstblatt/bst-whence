@@ -15,6 +15,7 @@ from .core import (
     load_project,
     release_cas_resources,
 )
+from .log import get_logger
 from .report import render_json, render_text
 
 
@@ -80,12 +81,29 @@ def build_parser():
     parser.add_argument(
         "--no-summary", action="store_true", help="omit the summary in text output",
     )
+    parser.add_argument(
+        "-v", "--verbose", action="store_true",
+        help="show informational and status messages on stderr",
+    )
+    parser.add_argument(
+        "--debug", action="store_true",
+        help="show debug messages on stderr (implies --verbose)",
+    )
+    parser.add_argument(
+        "--log-file", default=None, metavar="FILE",
+        help="additionally write log messages to FILE (informational and "
+             "above, or debug and above with --debug)",
+    )
     parser.add_argument("--version", action="version", version="%(prog)s " + __version__)
     return parser
 
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
+
+    logger = get_logger()
+    logger.configure(verbose=args.verbose, debug=args.debug, log_file=args.log_file)
+    logger.debug("bst-whence {}".format(__version__))
 
     if args.directory:
         os.chdir(args.directory)
@@ -106,6 +124,7 @@ def main(argv=None):
     results = []
     try:
         for target in args.targets:
+            logger.status("Analyzing target {}".format(target))
             try:
                 result = analyze_target(
                     context, project, target, args.deps, args.include, args.exclude
@@ -120,18 +139,20 @@ def main(argv=None):
             buf = io.StringIO()
             render_text(results, buf, args.by_dep, show_summary=not args.no_summary)
             report = buf.getvalue()
+
+        if args.output:
+            with open(args.output, "w") as f:
+                f.write(report)
+                if not report.endswith("\n"):
+                    f.write("\n")
+            logger.info("Report written to {}".format(args.output))
+        else:
+            sys.stdout.write(report)
+            if not report.endswith("\n"):
+                sys.stdout.write("\n")
     finally:
         release_cas_resources(context)
-
-    if args.output:
-        with open(args.output, "w") as f:
-            f.write(report)
-            if not report.endswith("\n"):
-                f.write("\n")
-    else:
-        sys.stdout.write(report)
-        if not report.endswith("\n"):
-            sys.stdout.write("\n")
+        logger.close()
 
 
 if __name__ == "__main__":

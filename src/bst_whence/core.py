@@ -30,14 +30,19 @@ Limitations:
 import fnmatch
 import os
 import re
-import sys
 from collections import defaultdict
 
-from ._buildstream import Artifact, Project, _Scope, remote_execution_pb2
+from ._buildstream import (
+    Artifact,
+    MessageType,
+    Project,
+    _Scope,
+    remote_execution_pb2,
+    unconditional_messages,
+)
+from .log import get_logger
 
 SCOPES = {"build": _Scope.BUILD, "run": _Scope.RUN, "all": _Scope.ALL}
-
-_casd_fallback_warned = False
 
 
 class CasError(Exception):
@@ -112,9 +117,12 @@ def directory_map(cas, root_digest, memo=None):
 # ---------------------------------------------------------------------------
 
 def load_project(context, directory):
+    logger = get_logger()
+    logger.status("Loading project from {}".format(directory))
     install_message_handler(context)
     project = Project(directory, context)
     project.ensure_fully_loaded()
+    logger.debug("Project loaded: {}".format(project.name))
     return project
 
 
@@ -167,8 +175,6 @@ def init_element_artifact(element, context):
 
     Returns an error string, or None on success.
     """
-    global _casd_fallback_warned
-
     try:
         element._initialize_state()
     except Exception as e:
@@ -184,12 +190,11 @@ def init_element_artifact(element, context):
         err = _init_artifact_direct(element, context)
         if err:
             return "failed to query the artifact cache: {} ({})".format(e, err)
-        if not _casd_fallback_warned:
-            _casd_fallback_warned = True
-            sys.stderr.write(
-                "WARNING: casd is not responding ({}); falling back to "
-                "filesystem-only artifact resolution\n".format(e)
-            )
+        get_logger().warn_once(
+            "casd-fallback",
+            "casd is not responding ({}); falling back to filesystem-only "
+            "artifact resolution".format(e),
+        )
         return None
 
 
@@ -199,24 +204,40 @@ def release_cas_resources(context):
     if context._cascache is not None:
         try:
             context._cascache.release_resources()
+            get_logger().debug("Released CAS resources")
         except Exception:
             pass
 
 
 def install_message_handler(context):
-    """Install a minimal message handler so BuildStream internals (which
-    assert that one exists) don't crash; forward warnings to stderr."""
+    """Install a message handler that forwards BuildStream's own messages
+    into bst-whence's logger, so they appear as bst-style console lines on
+    stderr (visibility follows the logger's verbosity)."""
+    logger = get_logger()
+
     def handler(message, is_silenced=False):
-        try:
-            message_type = message.message_type.name
-        except Exception:
-            message_type = "UNKNOWN"
-        if message_type in ("WARN", "ERROR") and not is_silenced:
-            try:
-                brief = message.message
-            except Exception:
-                brief = str(message)
-            sys.stderr.write("{}: {}\n".format(message_type, brief))
+        message_type = getattr(message, "message_type", None)
+        if is_silenced and message_type not in unconditional_messages:
+            return
+        text = getattr(message, "message", str(message))
+        detail = getattr(message, "detail", None)
+
+        if message_type == MessageType.DEBUG:
+            logger.debug(text, detail)
+        elif message_type == MessageType.STATUS:
+            logger.status(text, detail)
+        elif message_type in (MessageType.START, MessageType.SUCCESS, MessageType.FAIL, MessageType.SKIPPED):
+            # Task delimiter events; they repeat the task text, so keep them
+            # for --debug only.
+            logger.debug(text, detail)
+        elif message_type == MessageType.INFO:
+            logger.info(text, detail)
+        elif message_type == MessageType.WARN:
+            logger.warning(text, detail)
+        elif message_type in (MessageType.ERROR, MessageType.BUG):
+            logger.error(text, detail)
+        else:  # MessageType.LOG and anything unexpected
+            logger.debug(text, detail)
 
     context.messenger.set_message_handler(handler)
 
@@ -377,6 +398,7 @@ def filter_entries(entries, include, exclude):
 # ---------------------------------------------------------------------------
 
 def analyze_target(context, project, target_name, scope_name, include, exclude):
+    logger = get_logger()
     result = {
         "target": target_name,
         "scope": scope_name,
@@ -395,6 +417,7 @@ def analyze_target(context, project, target_name, scope_name, include, exclude):
         return result
 
     result["element"] = element.name
+    logger.status("Analyzing {} ({} scope)".format(element.name, scope_name))
 
     cas = context.get_cascache()
     memo = {}
@@ -406,17 +429,22 @@ def analyze_target(context, project, target_name, scope_name, include, exclude):
     for dep in iter_dependencies(element, scope_name):
         err = init_element_artifact(dep, context)
         if err:
+            logger.warning("{}: {}".format(dep.name, err))
             result["missing"].append({"name": dep.name, "reason": err})
             continue
         dep_digest, derr = artifact_files_digest(cas, dep)
         if derr:
+            logger.warning("{}: {}".format(dep.name, derr))
             result["missing"].append({"name": dep.name, "reason": derr})
             continue
         try:
-            dep_maps[dep.name] = directory_map(cas, dep_digest, memo)
+            with logger.timed_activity("Reading artifact contents of {}".format(dep.name)):
+                dep_maps[dep.name] = directory_map(cas, dep_digest, memo)
         except CasError as e:
+            logger.warning("{}: {}".format(dep.name, e))
             result["missing"].append({"name": dep.name, "reason": str(e)})
             continue
+        logger.info("{}: {} files indexed".format(dep.name, len(dep_maps[dep.name])))
         dep_names.append(dep.name)
 
     err = init_element_artifact(element, context)
@@ -430,12 +458,14 @@ def analyze_target(context, project, target_name, scope_name, include, exclude):
         return result
 
     try:
-        target_map = directory_map(cas, target_digest, memo)
+        with logger.timed_activity("Reading artifact contents of {}".format(element.name)):
+            target_map = directory_map(cas, target_digest, memo)
     except CasError as e:
         result["error"] = "artifact file blobs are incomplete in the local CAS: {}".format(e)
         return result
 
     result["artifact_digest"] = target_digest.hash
+    logger.info("{}: {} files indexed".format(element.name, len(target_map)))
 
     entries, per_dep = attribute_files(target_map, dep_maps, dep_names)
     if include or exclude:
@@ -447,7 +477,17 @@ def analyze_target(context, project, target_name, scope_name, include, exclude):
                 filtered_per_dep[m["element"]] += 1
         per_dep = dict(filtered_per_dep)
 
+    summary = summarize(entries, per_dep)
+    logger.info(
+        "Attribution: {} from deps, {} moved, {} ambiguous, {} unattributed".format(
+            summary["from_dependency"],
+            summary["moved"],
+            summary["ambiguous"],
+            summary["unattributed"],
+        )
+    )
+
     result["dependencies"] = dep_names
     result["entries"] = entries
-    result["summary"] = summarize(entries, per_dep)
+    result["summary"] = summary
     return result
