@@ -282,9 +282,20 @@ def install_message_handler(context):
     context.messenger.set_message_handler(handler)
 
 
+def element_display_name(element):
+    """Full element name including junction prefixes, e.g. 'sub.bst:tool.bst'.
+
+    Matches how `bst` itself displays subproject elements."""
+    try:
+        return element._get_full_name()
+    except Exception:
+        return element.name
+
+
 def iter_dependencies(element, scope_name):
     """Yield the element's dependencies in the requested scope, deduplicated
-    and sorted by name. The element itself is never included."""
+    and sorted by full name (junction prefixes included). The element itself
+    is never included."""
     scope = SCOPES[scope_name]
     seen = set()
     deps = []
@@ -295,7 +306,7 @@ def iter_dependencies(element, scope_name):
             continue
         seen.add(dep._unique_id)
         deps.append(dep)
-    deps.sort(key=lambda e: e.name)
+    deps.sort(key=element_display_name)
     return deps
 
 
@@ -459,8 +470,8 @@ def analyze_target(context, project, target_name, scope_name, include, exclude):
             result["error"] += "\nhint: rerun with --debug to see the full traceback"
         return result
 
-    result["element"] = element.name
-    logger.status("Analyzing {} ({} scope)".format(element.name, scope_name))
+    result["element"] = element_display_name(element)
+    logger.status("Analyzing {} ({} scope)".format(result["element"], scope_name))
 
     cas = context.get_cascache()
     memo = {}
@@ -470,25 +481,26 @@ def analyze_target(context, project, target_name, scope_name, include, exclude):
     dep_names = []
     dep_maps = {}
     for dep in iter_dependencies(element, scope_name):
+        dep_name = element_display_name(dep)
         err = init_element_artifact(dep, context)
         if err:
-            logger.warning("{}: {}".format(dep.name, err))
-            result["missing"].append({"name": dep.name, "reason": err})
+            logger.warning("{}: {}".format(dep_name, err))
+            result["missing"].append({"name": dep_name, "reason": err})
             continue
         dep_digest, derr = artifact_files_digest(cas, dep)
         if derr:
-            logger.warning("{}: {}".format(dep.name, derr))
-            result["missing"].append({"name": dep.name, "reason": derr})
+            logger.warning("{}: {}".format(dep_name, derr))
+            result["missing"].append({"name": dep_name, "reason": derr})
             continue
         try:
-            with logger.timed_activity("Reading artifact contents of {}".format(dep.name)):
-                dep_maps[dep.name] = directory_map(cas, dep_digest, memo)
+            with logger.timed_activity("Reading artifact contents of {}".format(dep_name)):
+                dep_maps[dep_name] = directory_map(cas, dep_digest, memo)
         except CasError as e:
-            logger.warning("{}: {}".format(dep.name, e))
-            result["missing"].append({"name": dep.name, "reason": str(e)})
+            logger.warning("{}: {}".format(dep_name, e))
+            result["missing"].append({"name": dep_name, "reason": str(e)})
             continue
-        logger.info("{}: {} files indexed".format(dep.name, len(dep_maps[dep.name])))
-        dep_names.append(dep.name)
+        logger.info("{}: {} files indexed".format(dep_name, len(dep_maps[dep_name])))
+        dep_names.append(dep_name)
 
     err = init_element_artifact(element, context)
     if err:

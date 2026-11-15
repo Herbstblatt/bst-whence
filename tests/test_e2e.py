@@ -243,6 +243,11 @@ class TestEndToEnd(unittest.TestCase):
         self.assertNotIn("not callable", error)
         # Artifacts are not cached, which is reported cleanly:
         self.assertIn("not cached", error)
+        # Subproject elements are reported with their junction prefix:
+        self.assertEqual(
+            [m["name"] for m in result["missing"]],
+            ["sub.bst:tool.bst"],
+        )
 
     def test_casd_failure_falls_back_to_filesystem(self):
         # Fabricate cached artifacts, then load fresh elements and simulate a

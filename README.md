@@ -130,6 +130,9 @@ usual convention:
 The report itself always goes to stdout (or `-o FILE`), so it stays clean to
 pipe into other tools.
 
+Element names in the report include junction prefixes where applicable
+(`sub.bst:tool.bst`), matching how `bst` itself displays subproject elements.
+
 ### Scope semantics (`--deps`)
 
 * `build` (default) — the **build scope**: the element's build dependencies
