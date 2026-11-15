@@ -7,7 +7,7 @@ See the README for usage, output format and limitations.
 
 import sys
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 from .core import (  # noqa: E402,F401
     CasError,

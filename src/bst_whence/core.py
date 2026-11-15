@@ -29,6 +29,7 @@ Limitations:
 
 import fnmatch
 import os
+import re
 import sys
 from collections import defaultdict
 
@@ -237,6 +238,37 @@ def iter_dependencies(element, scope_name):
     return deps
 
 
+_PACKAGE_NOT_FOUND_RE = re.compile(r"No package metadata was found for '?([A-Za-z0-9_.-]+)'?")
+
+
+def _hint_for_load_error(error):
+    """Return a human hint for common project-loading failures, or None.
+
+    In particular, BuildStream loads external element plugins (autotools,
+    cmake, meson, ...) from Python packages such as `buildstream-plugins`
+    installed in the same environment; when that package is missing the
+    error is cryptic, so translate it into an actionable hint."""
+    text = str(error)
+    match = _PACKAGE_NOT_FOUND_RE.search(text)
+    if match:
+        package = match.group(1)
+        return (
+            "hint: the Python package '{}' is not installed in the environment "
+            "where bst-whence is running (BuildStream loads element plugins "
+            "from installed Python packages). Install it there — e.g. "
+            "`pip install {}` — or run bst-whence with the same Python "
+            "environment as `bst`."
+        ).format(package, package)
+    if "Failed to load element plugin" in text:
+        return (
+            "hint: external element plugins (autotools, cmake, meson, ...) ship "
+            "in the 'buildstream-plugins' Python package. Ensure it is installed "
+            "in the same Python environment as bst-whence "
+            "(`pip install buildstream-plugins`)."
+        )
+    return None
+
+
 def artifact_files_digest(cas, element):
     """Return (digest, error) for the element's artifact `files` directory.
 
@@ -357,6 +389,9 @@ def analyze_target(context, project, target_name, scope_name, include, exclude):
         element = elements[0]
     except Exception as e:
         result["error"] = "failed to load element: {}".format(e)
+        hint = _hint_for_load_error(e)
+        if hint:
+            result["error"] += "\n" + hint
         return result
 
     result["element"] = element.name

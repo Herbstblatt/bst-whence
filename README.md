@@ -159,6 +159,41 @@ per-file entries (`origin`: `dependency` | `moved` | `own`, `matches`,
   attributed until pulled.
 * Directories are structural and are not attributed.
 
+## Troubleshooting
+
+### `failed to load element: ... No package metadata was found for buildstream-plugins`
+
+BuildStream loads external element plugins (`autotools`, `cmake`, `meson`,
+…) from Python packages installed in the same environment, and the project
+(junction) you're analyzing declares one of them. The error means
+`bst-whence` is running in a Python environment that has `buildstream` but
+not `buildstream-plugins` — usually because it's not the same environment
+`bst` runs in (e.g. a different venv, or outside the container).
+
+Check which environments are involved:
+
+```sh
+which bst-whence && head -1 "$(which bst-whence)"
+which bst        && head -1 "$(which bst)"
+```
+
+Then either run `bst-whence` with the same interpreter as `bst`, or install
+the plugins into the tool's environment:
+
+```sh
+python3 -m pip install buildstream-plugins
+```
+
+The installed `buildstream-plugins` version must be compatible with the
+`buildstream` version in that environment (the project may also pin a
+specific version; a mismatch surfaces as a *"Version conflict encountered
+while loading plugin"* error instead).
+
+### `error: artifact not cached locally`
+
+The target (or a dependency's) artifact is not in the local cache. Run
+`bst artifact pull <element>` in the same environment and retry.
+
 ## Library use
 
 The analysis is exposed as a small library:

@@ -232,5 +232,30 @@ class TestAttribute(unittest.TestCase):
         self.assertNotIn("usr/share/other.conf", {e["path"] for e in kept})
 
 
+class TestLoadErrorHints(unittest.TestCase):
+    def test_package_not_found_hint(self):
+        err = Exception(
+            "host_toolchain.bst:project.conf [line 40 column 4]: Failed to load "
+            "element plugin 'autotools': No package metadata was found for "
+            "buildstream-plugins"
+        )
+        hint = core._hint_for_load_error(err)
+        self.assertIn("buildstream-plugins", hint)
+        self.assertIn("pip install buildstream-plugins", hint)
+        self.assertIn("same Python environment as `bst`", hint)
+
+    def test_generic_plugin_hint(self):
+        err = Exception(
+            "foo.bst [line 3 column 4]: Failed to load element plugin 'autotools': "
+            "Pip package buildstream-plugins does not contain a element plugin named 'autotools'"
+        )
+        hint = core._hint_for_load_error(err)
+        self.assertIn("buildstream-plugins", hint)
+
+    def test_no_hint_for_other_errors(self):
+        self.assertIsNone(core._hint_for_load_error(Exception("element not found")))
+        self.assertIsNone(core._hint_for_load_error(Exception("artifact not cached locally")))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
