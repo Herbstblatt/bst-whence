@@ -88,10 +88,17 @@ bst-whence [options] ELEMENT [ELEMENT...]
   --include GLOB         only report paths matching GLOB (repeatable)
   --exclude GLOB         skip paths matching GLOB (repeatable)
   --no-summary           omit the summary in text output
+  --no-truncate          list every candidate for ambiguous matches
   -v, --verbose          show informational and status messages on stderr
   --debug                show debug messages on stderr (implies --verbose)
   --log-file FILE        also write log output to FILE
 ```
+
+When a file's content is found in many dependencies (e.g. a license file
+duplicated across a whole stack), the text report shows only as many
+candidates as fit the terminal width — always at least one — and collapses
+the rest into `… (+N more)`. Use `--no-truncate` to list them all. JSON
+output is never truncated: it always contains the complete match lists.
 
 ## Logging
 

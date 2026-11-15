@@ -82,6 +82,12 @@ def build_parser():
         "--no-summary", action="store_true", help="omit the summary in text output",
     )
     parser.add_argument(
+        "--no-truncate", action="store_true",
+        help="list every candidate for ambiguous matches, even if the lines "
+             "do not fit the terminal (by default only as many candidates as "
+             "fit are shown)",
+    )
+    parser.add_argument(
         "-v", "--verbose", action="store_true",
         help="show informational and status messages on stderr",
     )
@@ -137,7 +143,11 @@ def main(argv=None):
             report = render_json(results)
         else:
             buf = io.StringIO()
-            render_text(results, buf, args.by_dep, show_summary=not args.no_summary)
+            render_text(
+                results, buf, args.by_dep,
+                show_summary=not args.no_summary,
+                truncate=not args.no_truncate,
+            )
             report = buf.getvalue()
 
         if args.output:
