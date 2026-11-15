@@ -6,15 +6,6 @@
 
 Determine which dependency each file in a **BuildStream 2** artifact came from.
 
-BuildStream artifacts are content-addressed directory trees, but nothing in the
-artifact metadata records *which dependency* a given file came from. When an
-element is built, its build-scope dependencies are staged into the sandbox and
-build scripts routinely copy files out of them into the install root — the
-copies land in the artifact byte-for-byte identical to the originals.
-Content-addressed storage makes that observable: `bst-whence` compares per-file
-content digests between the target artifact and every dependency artifact and
-reports the provenance of every file.
-
 ```
 $ bst-whence app.bst
 
@@ -65,7 +56,7 @@ local CAS; the only casd interaction is the ordinary artifact cache query that
 Inside the environment that has BuildStream 2 installed:
 
 ```sh
-pip install git+https://github.com/<you>/bst-whence.git
+pip install git+https://github.com/Herbstblatt/bst-whence.git
 ```
 
 or from a checkout:
