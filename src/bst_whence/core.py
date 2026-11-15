@@ -32,9 +32,11 @@ import os
 import sys
 from collections import defaultdict
 
-from ._buildstream import Project, _Scope, remote_execution_pb2
+from ._buildstream import Artifact, Project, _Scope, remote_execution_pb2
 
 SCOPES = {"build": _Scope.BUILD, "run": _Scope.RUN, "all": _Scope.ALL}
+
+_casd_fallback_warned = False
 
 
 class CasError(Exception):
@@ -115,6 +117,42 @@ def load_project(context, directory):
     return project
 
 
+def _looks_like_casd_error(error):
+    """Heuristic for whether an exception comes from casd being unavailable
+    (dead process, broken RPC channel, ...) rather than from a genuine
+    problem with the element or the artifact metadata."""
+    cls = type(error)
+    if cls.__name__ == "CASCacheError":
+        return True
+    module = cls.__module__ or ""
+    if module.startswith("grpc") or "RpcError" in cls.__name__:
+        return True
+    return False
+
+
+def _init_artifact_direct(element, context):
+    """Construct the element's Artifact object without any casd interaction.
+
+    This mirrors the strict branch of `Element._load_artifact()`, minus the
+    casd-backed `query_cache()` call. Only valid when the project uses strict
+    cache mode, where the strong cache key equals the strict cache key.
+
+    Returns an error string, or None on success.
+    """
+    strict_key = element._Element__strict_cache_key
+    if strict_key is None:
+        return "cache keys unavailable (a build dependency has no cache key yet)"
+    artifact = Artifact(
+        element,
+        context,
+        strict_key=strict_key,
+        strong_key=strict_key,
+        weak_key=element._Element__weak_cache_key,
+    )
+    element._Element__artifact = artifact
+    return None
+
+
 def init_element_artifact(element, context):
     """Initialize the element's cache keys and Artifact object.
 
@@ -122,8 +160,14 @@ def init_element_artifact(element, context):
     `Element._load_artifact`): compute cache keys, query the local artifact
     cache and attach the resulting Artifact object to the element.
 
+    If casd is unavailable or dies, falls back to constructing the Artifact
+    directly (strict cache mode only): everything bst-whence actually needs
+    from the artifact cache is on the local filesystem.
+
     Returns an error string, or None on success.
     """
+    global _casd_fallback_warned
+
     try:
         element._initialize_state()
     except Exception as e:
@@ -132,9 +176,20 @@ def init_element_artifact(element, context):
     try:
         element._load_artifact(pull=False)
         element._load_artifact_done()
+        return None
     except Exception as e:
-        return "failed to query the artifact cache: {}".format(e)
-    return None
+        if not _looks_like_casd_error(e) or not context.get_strict():
+            return "failed to query the artifact cache: {}".format(e)
+        err = _init_artifact_direct(element, context)
+        if err:
+            return "failed to query the artifact cache: {} ({})".format(e, err)
+        if not _casd_fallback_warned:
+            _casd_fallback_warned = True
+            sys.stderr.write(
+                "WARNING: casd is not responding ({}); falling back to "
+                "filesystem-only artifact resolution\n".format(e)
+            )
+        return None
 
 
 def release_cas_resources(context):

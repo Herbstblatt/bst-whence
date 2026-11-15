@@ -18,10 +18,12 @@ import os
 import shutil
 import tempfile
 import unittest
+from unittest import mock
 
 import bst_whence.core as core
 from bst_whence import cli
 
+from buildstream._exceptions import CASCacheError
 from buildstream._protos.build.bazel.remote.execution.v2 import remote_execution_pb2
 from buildstream._protos.buildstream.v2 import artifact_pb2
 
@@ -199,6 +201,31 @@ class TestEndToEnd(unittest.TestCase):
         )
         self.assertIn("error", result)
         self.assertIn("not cached", result["error"])
+
+    def test_casd_failure_falls_back_to_filesystem(self):
+        # Fabricate cached artifacts, then load fresh elements and simulate a
+        # dead casd: Element._load_artifact() raises the exact error bst
+        # raises when buildbox-casd dies. The tool must fall back to the
+        # casd-free artifact resolution and still find the artifacts.
+        self.fabricate("base.bst", self.base_tree)
+        self.fabricate("lib.bst", self.lib_tree)
+        self.fabricate("app.bst", self.app_tree)
+
+        element = self.project.load_elements(["app.bst"])[0]
+        with mock.patch.object(
+            type(element),
+            "_load_artifact",
+            side_effect=CASCacheError(
+                "buildbox-casd process died before connection could be established"
+            ),
+        ):
+            err = core.init_element_artifact(element, self.context)
+        self.assertIsNone(err, err)
+
+        cas = self.context.get_cascache()
+        digest, derr = core.artifact_files_digest(cas, element)
+        self.assertIsNone(derr, derr)
+        self.assertEqual(digest.hash, self.app_tree.hash)
 
     def test_cli_text_and_json(self):
         self.fabricate("base.bst", self.base_tree)

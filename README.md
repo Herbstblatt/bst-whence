@@ -49,7 +49,9 @@ summary:
 
 No builds, pushes or pulls are performed. Files are read directly from the
 local CAS; the only casd interaction is the ordinary artifact cache query that
-`bst` itself performs for every command.
+`bst` itself performs for every command. If casd is not running or fails to
+start, bst-whence falls back to resolving artifacts directly from the local
+filesystem (strict cache mode, which is BuildStream's default).
 
 ## Installation
 
