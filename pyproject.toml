@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bst-whence"
+dynamic = ["version"]
+description = "Determine which dependency each file in a BuildStream 2 artifact came from"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = [
+  "buildstream>=2.4",
+]
+keywords = ["buildstream", "artifact", "provenance", "cas", "build-tool"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Topic :: Software Development :: Build Tools",
+]
+
+[project.scripts]
+bst-whence = "bst_whence:entrypoint"
+
+[tool.setuptools.dynamic]
+version = {attr = "bst_whence.__version__"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
