@@ -30,6 +30,7 @@ Limitations:
 import fnmatch
 import os
 import re
+import sys
 from collections import defaultdict
 
 from ._buildstream import (
@@ -276,10 +277,10 @@ def _hint_for_load_error(error):
         return (
             "hint: the Python package '{}' is not installed in the environment "
             "where bst-whence is running (BuildStream loads element plugins "
-            "from installed Python packages). Install it there — e.g. "
-            "`pip install {}` — or run bst-whence with the same Python "
-            "environment as `bst`."
-        ).format(package, package)
+            "from installed Python packages). bst-whence is running under the "
+            "interpreter {}. Install it there — e.g. `{} -m pip install {}` — "
+            "or run bst-whence with the same Python environment as `bst`."
+        ).format(package, sys.executable, sys.executable, package)
     if "Failed to load element plugin" in text:
         return (
             "hint: external element plugins (autotools, cmake, meson, ...) ship "

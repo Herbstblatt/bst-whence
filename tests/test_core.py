@@ -11,6 +11,7 @@
 import hashlib
 import os
 import shutil
+import sys
 import tempfile
 import unittest
 
@@ -241,8 +242,10 @@ class TestLoadErrorHints(unittest.TestCase):
         )
         hint = core._hint_for_load_error(err)
         self.assertIn("buildstream-plugins", hint)
-        self.assertIn("pip install buildstream-plugins", hint)
+        self.assertIn("-m pip install buildstream-plugins", hint)
         self.assertIn("same Python environment as `bst`", hint)
+        self.assertIn("running under the interpreter", hint)
+        self.assertIn(sys.executable, hint)
 
     def test_generic_plugin_hint(self):
         err = Exception(
